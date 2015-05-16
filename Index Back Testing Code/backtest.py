@@ -35,52 +35,52 @@ def pull_historical_data(ticker_symbol, directory="Stocks"):
 		outfile.write(e.content)
 		outfile.close()
 
-def get_data(stk1):
-	spxl_data = []
-	with open(stk1, 'rb') as input:
+def get_data(stock_file):
+	stock_data = []
+	with open(stock_file, 'rb') as input:
 		input.next()
-		spxl_data = [float(x.split(',')[-1]) for x in input]
+		stock_data = [float(x.split(',')[-1]) for x in input]
 		
-		if 'gold' in stk1:
-			t = [0.0] * (len(spxl_data)*21)
-			for count,x in enumerate(spxl_data):
+		if 'gold' in stock_file:
+			t = [0.0] * (len(stock_data)*21)
+			for count,x in enumerate(stock_data):
 				for y in xrange(21):
 					t[count*21+y] = x
-			spxl_data = t
-			spxl_data.reverse()
+			stock_data = t
+			stock_data.reverse()
 	
-	spxl_data.reverse()
-	return spxl_data
+	stock_data.reverse()
+	return stock_data
 	
 def generate_leveraged_data(data, leverage_rate):
-	leveraged_etf = []
+	leveraged_security_data = []
 	for x in xrange(len(data)):
 		if x == 0:
-			leveraged_etf.append(data[x])
+			leveraged_security_data.append(data[x])
 			continue
-		chng = ((data[x]-data[x-1]) / data[x-1])
-		old = leveraged_etf[-1]
-		new = old * (leverage_rate*chng+1)
-		leveraged_etf.append(new)
-	return leveraged_etf
+		daily_change = ((data[x]-data[x-1]) / data[x-1])
+		old = leveraged_security_data[-1]
+		new = old * (leverage_rate*daily_change+1)
+		leveraged_security_data.append(new)
+	return leveraged_security_data
 	
-def invest_with_rebalance(stk1, stk2, ratio, window=0.10, back_test_length=-1, leverage = 1, investment_period = 1, chart=True, verify_data_lengths=True, periodic_rebalance="None", rebalance=True):
-	daily_inc = 10
-	spxl_fund = 0
-	tmf_fund = 0
+def invest_with_rebalance(stk1, stk2, stock_holding_ratio, window=0.10, back_test_length=-1, leverage_rate = 1, investment_period = 1, chart=True, verify_data_lengths=True, periodic_rebalance="None", rebalance=True):
+	daily_investment = 10
+	first_stock_shares = 0
+	second_stock_shares = 0
 	price = 0
 	rebalance_fee = 14
 	periodic_rebalance_time = max(len(stk1[1]), len(stk2[1]))+1
 	
-	name1 = stk1[0]
-	name2 = stk2[0]
+	first_stock_symbol = stk1[0]
+	second_stock_symbol = stk2[0]
 
 	if verify_data_lengths==True:
-		if leverage!=1:
+		if leverage_rate!=1:
 			stk1 = [x for x in stk1[1]]
 			stk2 = [x for x in stk2[1]]
-			stk1 = generate_leveraged_data(stk1, leverage)
-			#stk2 = generate_leveraged_data(stk2, leverage)
+			stk1 = generate_leveraged_data(stk1, leverage_rate)
+			#stk2 = generate_leveraged_data(stk2, leverage_rate)
 		else:
 			stk1 = [x for x in stk1[1]]
 			stk2 = [x for x in stk2[1]]
@@ -107,13 +107,13 @@ def invest_with_rebalance(stk1, stk2, ratio, window=0.10, back_test_length=-1, l
 		stk1 = stk1[1]
 		stk2 = stk2[1]
 	
-	fund_values = [0.0] * (len(stk1)+1)
-	spxl_values = [0.0] * (len(stk1)+1)
-	tmf_values = [0.0] * (len(stk1)+1)
+	portfolio_values = [0.0] * (len(stk1)+1)
+	first_stock_values = [0.0] * (len(stk1)+1)
+	second_stock_values = [0.0] * (len(stk1)+1)
 	
-	spxl_values[0] = ratio*10
-	tmf_values[0] = (1-ratio)*10
-	fund_values[0] = tmf_values[0] + spxl_values[0]
+	first_stock_values[0] = stock_holding_ratio*10
+	second_stock_values[0] = (1-stock_holding_ratio)*10
+	portfolio_values[0] = second_stock_values[0] + first_stock_values[0]
 	
 	if periodic_rebalance=="Daily":
 		periodic_rebalance_time = 1
@@ -126,86 +126,85 @@ def invest_with_rebalance(stk1, stk2, ratio, window=0.10, back_test_length=-1, l
 	if periodic_rebalance=="Yearly":
 		periodic_rebalance_time = 252
 	
-	spxl_fund = 0
-	tmf_fund = 0
-	rebalance_count = 0
+	first_stock_shares = 0
+	second_stock_shares = 0
+	number_of_rebalances_made = 0
 	rebalance_window = window
-	c=0
+	day = 0
 	
 	for x,y in zip(stk1, stk2):
-		c+=1
+		day+=1
 		try:
-			price_s1 = x
-			daily_spxl_investment = 0
-			if c%investment_period==0:
-				daily_spxl_investment = ratio * daily_inc*investment_period
-			spxl_shares = daily_spxl_investment/price_s1
-			spxl_fund += spxl_shares
+			first_stock_price = x
+			daily_first_stock_investment = 0
+			if day%investment_period==0:
+				daily_first_stock_investment = stock_holding_ratio * daily_investment * investment_period
+			daily_first_stock_shares = daily_first_stock_investment/first_stock_price
+			first_stock_shares += daily_first_stock_shares
 		except ZeroDivisionError:
-			spxl_shares = 0
-			spxl_fund = 0
+			daily_first_stock_shares = 0
+			first_stock_shares = 0
 			
 		try:
-			price_s2 = y
-			daily_tmf_investment = 0
-			if c%investment_period==0:
-				daily_tmf_investment = (1-ratio) * daily_inc*investment_period
-			tmf_shares = daily_tmf_investment/price_s2
-			tmf_fund += tmf_shares
+			second_stock_price = y
+			daily_second_stock_investment = 0
+			if day%investment_period==0:
+				daily_second_stock_investment = (1-stock_holding_ratio) * daily_investment * investment_period
+			daily_second_stock_shares = daily_second_stock_investment/second_stock_price
+			second_stock_shares += daily_second_stock_shares
 		except ZeroDivisionError:
-			tmf_shares = 0
-			tmf_fund = 0
+			daily_second_stock_shares = 0
+			second_stock_shares = 0
 		
-		spxl_values[c] = (spxl_fund*price_s1)
-		tmf_values[c] = (tmf_fund*price_s2)
-		fund_values[c] = (spxl_fund*price_s1 + tmf_fund*price_s2)
+		first_stock_values[day] = (first_stock_shares*first_stock_price)
+		second_stock_values[day] = (second_stock_shares*second_stock_price)
+		portfolio_values[day] = (first_stock_shares*first_stock_price + second_stock_shares*second_stock_price)
 	
-		if price_s1 == 0 or price_s2 == 0: continue
+		if first_stock_price == 0 or second_stock_price == 0: continue
 		
-		percent_spxl = spxl_values[c]/fund_values[c]
+		first_stock_portfolio_percent = first_stock_values[day]/portfolio_values[day]
 		
-		# Rebalance SPXL -> TMF
-		if (percent_spxl > (ratio+rebalance_window) or c%periodic_rebalance_time==0) and rebalance==True:
-			#print "Rebalance SPXL -> TMF"
-			rebalance_count+=1
-			target_spxl_value = ratio * fund_values[c]
-			# Sell SPXL
-			sell_amount = spxl_values[c] - target_spxl_value
-			sell_shares = sell_amount/price_s1
-			spxl_fund -= sell_shares
-			cash_pool = sell_amount-rebalance_fee
-			spxl_values[c] = spxl_fund*price_s1
-			# Buy TMF
-			tmf_shares = cash_pool / price_s2
-			tmf_fund+= tmf_shares
-			tmf_values[c]=(tmf_fund*price_s2)
-			fund_values[c] = (spxl_fund*price_s1 + tmf_fund*price_s2)
+		# Rebalance first_stock -> second_stock
+		if (first_stock_portfolio_percent > (stock_holding_ratio+rebalance_window) or day%periodic_rebalance_time==0) and rebalance==True:
+			number_of_rebalances_made+=1
+			target_first_stock_value = stock_holding_ratio * portfolio_values[day]
+			# Sell first_stock
+			cash_to_sell = first_stock_values[day] - target_first_stock_value
+			shares_to_sell = cash_to_sell/first_stock_price
+			first_stock_shares -= shares_to_sell
+			cash_pool = cash_to_sell-rebalance_fee
+			first_stock_values[day] = first_stock_shares*first_stock_price
+			# Buy second_stock
+			daily_second_stock_shares = cash_pool / second_stock_price
+			second_stock_shares+= daily_second_stock_shares
+			second_stock_values[day]=(second_stock_shares*second_stock_price)
+			portfolio_values[day] = (first_stock_shares*first_stock_price + second_stock_shares*second_stock_price)
 			
-		# Rebalance TMF -> SPXL
-		if (percent_spxl < (ratio-rebalance_window) or c%periodic_rebalance_time==0)  and rebalance==True:
-			#print "Rebalance TMF -> SPXL"
-			rebalance_count+=1
-			target_tmf_value = (1-ratio) * fund_values[c]
-			# sell TMF
-			sell_amount = tmf_values[c] - target_tmf_value
-			sell_shares = sell_amount/price_s2
-			tmf_fund -= sell_shares
-			cash_pool = sell_amount-rebalance_fee
-			tmf_values[c] = tmf_fund*price_s2
-			# Buy SPXL
-			spxl_shares = cash_pool / price_s1
-			spxl_fund += spxl_shares
-			spxl_values[c]=(spxl_fund*price_s1)
-			fund_values[c] = (spxl_fund*price_s1 + tmf_fund*price_s2)
+		# Rebalance second_stock -> first_stock
+		if (first_stock_portfolio_percent < (stock_holding_ratio-rebalance_window) or day%periodic_rebalance_time==0)  and rebalance==True:
+			#print "Rebalance second_stock -> first_stock"
+			number_of_rebalances_made+=1
+			target_second_stock_value = (1-stock_holding_ratio) * portfolio_values[day]
+			# sell second_stock
+			cash_to_sell = second_stock_values[day] - target_second_stock_value
+			shares_to_sell = cash_to_sell/second_stock_price
+			second_stock_shares -= shares_to_sell
+			cash_pool = cash_to_sell-rebalance_fee
+			second_stock_values[day] = second_stock_shares*second_stock_price
+			# Buy first_stock
+			daily_first_stock_shares = cash_pool / first_stock_price
+			first_stock_shares += daily_first_stock_shares
+			first_stock_values[day] = (first_stock_shares*first_stock_price)
+			portfolio_values[day] = (first_stock_shares*first_stock_price + second_stock_shares*second_stock_price)
 		
 			
 	years = len(stk1)/252
 
-	basic_value = [0.0] * (len(stk1)+1)
+	amount_invested = [0.0] * (len(stk1)+1)
 	multiplier = 0
 	for x in xrange(0, len(stk1)+1):
 		if x%investment_period==0: multiplier+=1
-		basic_value[x] = 10*investment_period*multiplier
+		amount_invested[x] = 10*investment_period*multiplier
 		
 	days = [x/252+(2015-years) for x in xrange(len(stk1)+1)]
 	
@@ -213,16 +212,16 @@ def invest_with_rebalance(stk1, stk2, ratio, window=0.10, back_test_length=-1, l
 		fig = plt.figure()
 		ax = fig.add_subplot('111')
 
-		ax.plot(days, basic_value, label='Invested Dollars')
-		ax.plot(days, spxl_values, label=name1.upper())
-		ax.plot(days, tmf_values, label=name2.upper())
-		ax.plot(days, fund_values, label='Total')
+		ax.plot(days, amount_invested, label='Invested Dollars')
+		ax.plot(days, first_stock_values, label=first_stock_symbol.upper())
+		ax.plot(days, second_stock_values, label=second_stock_symbol.upper())
+		ax.plot(days, portfolio_values, label='Total')
 		plt.legend(loc='best')
 		
 		fig.canvas.show()
-		return fund_values[-1], rebalance_count
+		return portfolio_values[-1], number_of_rebalances_made
 	else:
-		return fund_values[-1], rebalance_count
+		return portfolio_values[-1], number_of_rebalances_made
 		
 def generate_chart_manual():
 	try:
@@ -240,7 +239,7 @@ def generate_chart_manual():
 		stocks.append((stk1.upper(), t1))
 		stocks.append((stk2.upper(), t2))
 		
-		invest_with_rebalance(stocks[0], stocks[1], ratio=ratio, window=window_rebalance, leverage=1, rebalance=True, chart=True, periodic_rebalance=periodic_rebalance)
+		invest_with_rebalance(stocks[0], stocks[1], stock_holding_ratio=ratio, window=window_rebalance, leverage_rate=1, rebalance=True, chart=True, periodic_rebalance=periodic_rebalance)
 	except Exception:
 		print 'Some unknown exception occured. Check input arguments.'
 		raw_input()
@@ -261,7 +260,7 @@ def generate_chart_cmdline():
 	stocks.append((stk1.upper(), t1))
 	stocks.append((stk2.upper(), t2))
 	
-	invest_with_rebalance(stocks[0], stocks[1], ratio=ratio, window=window_rebalance, leverage=3, rebalance=True, chart=True, periodic_rebalance=periodic_rebalance)
+	invest_with_rebalance(stocks[0], stocks[1], stock_holding_ratio=ratio, window=window_rebalance, leverage_rate=3, rebalance=True, chart=True, periodic_rebalance=periodic_rebalance)
 	
 if __name__ == '__main__':
 	if len(sys.argv)==1:
