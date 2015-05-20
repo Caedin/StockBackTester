@@ -8,6 +8,7 @@ import sys
 import matplotlib.pyplot as plt
 import random
 import urllib
+import numpy as np
 import os
 
 plt.ion()
@@ -230,6 +231,162 @@ def invest_with_rebalance(stk1, stk2, stock_holding_ratio, window=0.10, back_tes
 	else:
 		return portfolio_values[-1], number_of_rebalances_made
 		
+	
+def FindTimeToFI(stk1, stk2, stock_holding_ratio, window=0.10, back_test_length=-1, leverage_rate = 1, investment_period = 1, chart=False, verify_data_lengths=True, periodic_rebalance="None", rebalance=True, startDay = 0, FIRE_Target = 1000000):
+	daily_investment = 100
+	first_stock_shares = 0
+	second_stock_shares = 0
+	price = 0
+	rebalance_fee = 14
+	periodic_rebalance_time = max(len(stk1[1]), len(stk2[1]))+1
+	
+	first_stock_symbol = stk1[0]
+	second_stock_symbol = stk2[0]
+
+	if verify_data_lengths==True:
+		stk1, stk2 = AlignData(stk1, stk2, min_backtest_time=back_test_length)
+		if leverage_rate!=1:
+			stk1 = generate_leveraged_data(stk1, leverage_rate)
+	else:
+		stk1 = stk1[1]
+		stk2 = stk2[1]
+	
+	
+	if periodic_rebalance=="Daily":
+		periodic_rebalance_time = 1
+	if periodic_rebalance=="Weekly":
+		periodic_rebalance_time = 5
+	if periodic_rebalance=="Monthly":
+		periodic_rebalance_time = 21
+	if periodic_rebalance=="Quarterly":
+		periodic_rebalance_time = 63
+	if periodic_rebalance=="Yearly":
+		periodic_rebalance_time = 252
+	
+	first_stock_shares = 0
+	second_stock_shares = 0
+	number_of_rebalances_made = 0
+	rebalance_window = window
+	
+	day = 0
+	stk1 = stk1[startDay:]
+	stk2 = stk2[startDay:]
+	
+	portfolio_values = [0.0] * (len(stk1)+1)
+	first_stock_values = [0.0] * (len(stk1)+1)
+	second_stock_values = [0.0] * (len(stk1)+1)
+	
+	first_stock_values[0] = stock_holding_ratio*10
+	second_stock_values[0] = (1-stock_holding_ratio)*10
+	portfolio_values[0] = second_stock_values[0] + first_stock_values[0]
+	
+	for x,y in zip(stk1, stk2):
+		day+=1
+		if day>len(stk1):
+			break
+		if portfolio_values[day-1] > FIRE_Target:
+			break
+		
+		try:
+			first_stock_price = x
+			daily_first_stock_investment = 0
+			if day%investment_period==0:
+				daily_first_stock_investment = stock_holding_ratio * daily_investment * investment_period
+			daily_first_stock_shares = daily_first_stock_investment/first_stock_price
+			first_stock_shares += daily_first_stock_shares
+		except ZeroDivisionError:
+			daily_first_stock_shares = 0
+			first_stock_shares = 0
+			
+		try:
+			second_stock_price = y
+			daily_second_stock_investment = 0
+			if day%investment_period==0:
+				daily_second_stock_investment = (1-stock_holding_ratio) * daily_investment * investment_period
+			daily_second_stock_shares = daily_second_stock_investment/second_stock_price
+			second_stock_shares += daily_second_stock_shares
+		except ZeroDivisionError:
+			daily_second_stock_shares = 0
+			second_stock_shares = 0
+		
+		first_stock_values[day] = (first_stock_shares*first_stock_price)
+		second_stock_values[day] = (second_stock_shares*second_stock_price)
+		portfolio_values[day] = (first_stock_shares*first_stock_price + second_stock_shares*second_stock_price)
+	
+		if first_stock_price == 0 or second_stock_price == 0: continue
+		
+		first_stock_portfolio_percent = first_stock_values[day]/portfolio_values[day]
+		
+		# Rebalance first_stock -> second_stock
+		if (first_stock_portfolio_percent > (stock_holding_ratio+rebalance_window) or day%periodic_rebalance_time==0) and rebalance==True:
+			number_of_rebalances_made+=1
+			target_first_stock_value = stock_holding_ratio * portfolio_values[day]
+			# Sell first_stock
+			cash_to_sell = first_stock_values[day] - target_first_stock_value
+			shares_to_sell = cash_to_sell/first_stock_price
+			first_stock_shares -= shares_to_sell
+			cash_pool = cash_to_sell-rebalance_fee
+			first_stock_values[day] = first_stock_shares*first_stock_price
+			# Buy second_stock
+			daily_second_stock_shares = cash_pool / second_stock_price
+			second_stock_shares+= daily_second_stock_shares
+			second_stock_values[day]=(second_stock_shares*second_stock_price)
+			portfolio_values[day] = (first_stock_shares*first_stock_price + second_stock_shares*second_stock_price)
+			
+		# Rebalance second_stock -> first_stock
+		if (first_stock_portfolio_percent < (stock_holding_ratio-rebalance_window) or day%periodic_rebalance_time==0)  and rebalance==True:
+			#print "Rebalance second_stock -> first_stock"
+			number_of_rebalances_made+=1
+			target_second_stock_value = (1-stock_holding_ratio) * portfolio_values[day]
+			# sell second_stock
+			cash_to_sell = second_stock_values[day] - target_second_stock_value
+			shares_to_sell = cash_to_sell/second_stock_price
+			second_stock_shares -= shares_to_sell
+			cash_pool = cash_to_sell-rebalance_fee
+			second_stock_values[day] = second_stock_shares*second_stock_price
+			# Buy first_stock
+			daily_first_stock_shares = cash_pool / first_stock_price
+			first_stock_shares += daily_first_stock_shares
+			first_stock_values[day] = (first_stock_shares*first_stock_price)
+			portfolio_values[day] = (first_stock_shares*first_stock_price + second_stock_shares*second_stock_price)
+
+	
+	if day == 0:
+		day = 1
+	
+	endDay = startDay+day
+	
+	first_stock_values = first_stock_values[:day]
+	second_stock_values = second_stock_values[:day]
+	portfolio_values = portfolio_values[:day]
+	years = len(stk1)/252
+	
+	amount_invested = [0.0] * (len(stk1)+1)
+	multiplier = 0
+	for x in xrange(0, len(stk1)+1):
+		if x%investment_period==0: multiplier+=1
+		amount_invested[x] = 10*investment_period*multiplier
+		
+	days = [x/252+(2015-years) for x in xrange(len(stk1)+1)]
+	days = days[:day]
+	amount_invested = amount_invested[:day]
+	
+	if chart==True:
+		fig = plt.figure()
+		ax = fig.add_subplot('111')
+
+		ax.plot(days, amount_invested, label='Invested Dollars')
+		ax.plot(days, first_stock_values, label=first_stock_symbol.upper())
+		ax.plot(days, second_stock_values, label=second_stock_symbol.upper())
+		ax.plot(days, portfolio_values, label='Total')
+		plt.legend(loc='best')
+		
+		fig.canvas.show()
+		raw_input()
+		return portfolio_values[-1], number_of_rebalances_made, endDay-startDay
+	else:
+		return portfolio_values[-1], number_of_rebalances_made, endDay-startDay
+
 def InvestWithRebalancingUsingPERatios(stk1, stk2, back_test_length=-1, leverage_rate = 1, investment_period = 1, chart=True, verify_data_lengths=True, PriceToEarningsEquityThreshold = 15):
 	global SP_PE_ratio
 	daily_investment = 10
@@ -434,8 +591,69 @@ def ReadInSPPriceToEarnings():
 	stock_data.reverse()
 	SP_PE_ratio = stock_data
 	
+def CalculateTimeToFIRE():
+	stk1 = raw_input("Enter Stock 1: ")
+	stk2 = raw_input("Enter Stock 2: ")
+	stock1_leverage_rate = float(raw_input("Stock 1 Leverage: "))
+	ratio = float(raw_input("Enter target ratio for Stock 1: "))
+	periodic_rebalance = raw_input("Periodic Rebalancing: [None, Daily, Weekly, Monthly, Quarterly, Yearly]: ")
+	window_rebalance = float(raw_input("Maximal Target Difference: "))
+	FIRE_Target = float(raw_input("FI Target Value: "))
+	
+	stocks = []
+	t1 = pull_historical_data(stk1)
+	t2 = pull_historical_data(stk2)
+	t1 = get_data(t1)
+	t2 = get_data(t2)
+	stocks.append((stk1.upper(), t1))
+	stocks.append((stk2.upper(), t2))
+	
+	FIResults = FindTimeToFI(stocks[0], stocks[1], stock_holding_ratio=ratio, window=window_rebalance, leverage_rate=stock1_leverage_rate, rebalance=True, chart=True, periodic_rebalance=periodic_rebalance, FIRE_Target = FIRE_Target, startDay = 0)
+	print FIResults[0], FIResults[1], FIResults[2], str((FIResults[0]/FIRE_Target)*100)[0:5]+"%"
+	
+def CalculateAverageTimeToFIRE():
+	stk1 = raw_input("Enter Stock 1: ")
+	stk2 = raw_input("Enter Stock 2: ")
+	stock1_leverage_rate = float(raw_input("Stock 1 Leverage: "))
+	ratio = float(raw_input("Enter target ratio for Stock 1: "))
+	periodic_rebalance = raw_input("Periodic Rebalancing: [None, Daily, Weekly, Monthly, Quarterly, Yearly]: ")
+	window_rebalance = float(raw_input("Maximal Target Difference: "))
+	FIRE_Target = float(raw_input("FI Target Value: "))
+	
+	stocks = []
+	t1 = pull_historical_data(stk1)
+	t2 = pull_historical_data(stk2)
+	t1 = get_data(t1)
+	t2 = get_data(t2)
+	stocks.append((stk1.upper(), t1))
+	stocks.append((stk2.upper(), t2))
+	
+	TimeToFire = []
+	failureCount = 0
+	timeInterval = 50
+	for x in xrange(1, len(t1)-1, timeInterval):
+		FIResults = FindTimeToFI(stocks[0], stocks[1], stock_holding_ratio=ratio, window=window_rebalance, leverage_rate=stock1_leverage_rate, rebalance=True, chart=False, periodic_rebalance=periodic_rebalance, FIRE_Target = FIRE_Target, startDay = x)
+		if FIResults[0]>FIRE_Target:
+			TimeToFire.append(float(FIResults[2]))
+		else:
+			failureCount+=1
+		#print str((x/float(len(t1)))*100)[0:5]+"%", "failureCount:", failureCount, "Days To Fire:", float(FIResults[2])
+	
+	outputFileName = stk1+'_'+stk2+'_'+str(int(stock1_leverage_rate))+'x_' + str(ratio*10)+ '-' + str(window_rebalance*10)+'.csv'
+	with open(outputFileName, 'wb') as output_file:
+		output_file.write("stock1," + str(stk1) + '\n')
+		output_file.write( "stock2," + str(stk2) + '\n')
+		output_file.write( "leverage," + str(stock1_leverage_rate) + '\n')
+		output_file.write( "ratio," + str(ratio) + '\n')
+		output_file.write( "window," + str(window_rebalance) + '\n')
+		output_file.write( "Average Time To FIRE," + str(np.mean(TimeToFire)) + '\n')
+		output_file.write( "Median Time To FIRE," + str(np.median(TimeToFire)) + '\n')
+		output_file.write( "Standard Deviation of Time To FIRE," + str(np.std(TimeToFire)) + '\n')
+		output_file.write( "Failure Rate," + str(100*failureCount/(float(len(t1))/timeInterval))[0:5]+'%' + '\n')
+	
+	
 def chooseRebalancingMethod():
-	method = raw_input("Choose Rebalancing Method: [P/E, Window, Optimal P/E]\t")
+	method = raw_input("Choose Rebalancing Method: [P/E, Window, Optimal P/E, FI, AvgFI]\t")
 	return method
 	
 if __name__ == '__main__':
@@ -447,6 +665,10 @@ if __name__ == '__main__':
 		generate_chart_manual_window()
 	elif method == "Optimal P/E":
 		findOptimalPriceToEarningsThreshold()
+	elif method == "FI":
+		CalculateTimeToFIRE()
+	elif method == "AvgFI":
+		CalculateAverageTimeToFIRE()
 	raw_input()
 
 	

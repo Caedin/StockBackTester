@@ -1,0 +1,9 @@
+stock1,SP_daily
+stock2,bond_index
+leverage,4.0
+ratio,0.6
+window,0.3
+Average Time To FIRE,2495.1796875
+Median Time To FIRE,2146.0
+Standard Deviation of Time To FIRE,985.282133084
+Failure Rate,36.67%
