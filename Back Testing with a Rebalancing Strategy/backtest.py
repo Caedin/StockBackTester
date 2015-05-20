@@ -238,6 +238,9 @@ def InvestWithRebalancingUsingPERatios(stk1, stk2, back_test_length=-1, leverage
 	price = 0
 	rebalance_fee = 14
 	
+	EquityPriceToEarningsThreshold = PriceToEarningsEquityThreshold[1]
+	BondPriceToEarningsThreshold = PriceToEarningsEquityThreshold[0]
+	
 	first_stock_symbol = stk1[0]
 	second_stock_symbol = stk2[0]
 
@@ -264,10 +267,10 @@ def InvestWithRebalancingUsingPERatios(stk1, stk2, back_test_length=-1, leverage
 	
 	for x,y in zip(stk1, stk2):
 		day+=1
-		if SP_PE_ratio[day-1] > PriceToEarningsEquityThreshold:
-			stock_holding_ratio = 0
-		else:
+		if SP_PE_ratio[day-1] < EquityPriceToEarningsThreshold:
 			stock_holding_ratio = 1
+		else:
+			stock_holding_ratio = 0
 		
 		try:
 			first_stock_price = x
@@ -300,7 +303,7 @@ def InvestWithRebalancingUsingPERatios(stk1, stk2, back_test_length=-1, leverage
 		first_stock_portfolio_percent = first_stock_values[day]/portfolio_values[day]
 		
 		# Rebalance first_stock -> second_stock
-		if SP_PE_ratio[day-1] > PriceToEarningsEquityThreshold and first_stock_shares>0:
+		if SP_PE_ratio[day-1] > EquityPriceToEarningsThreshold and first_stock_shares>0:
 			number_of_rebalances_made+=1
 			target_first_stock_value = 0
 			# Sell first_stock
@@ -316,7 +319,7 @@ def InvestWithRebalancingUsingPERatios(stk1, stk2, back_test_length=-1, leverage
 			portfolio_values[day] = (first_stock_shares*first_stock_price + second_stock_shares*second_stock_price)
 			
 		# Rebalance second_stock -> first_stock
-		if SP_PE_ratio[day-1] < PriceToEarningsEquityThreshold and second_stock_shares>0:
+		if SP_PE_ratio[day-1] < BondPriceToEarningsThreshold and second_stock_shares>0:
 			number_of_rebalances_made+=1
 			target_second_stock_value = 0
 			# sell second_stock
@@ -380,7 +383,8 @@ def generate_chart_manual_PriceToEarnings():
 	stk1 = raw_input("Enter Stock 1: ")
 	stk2 = raw_input("Enter Stock 2: ")
 	stock1_leverage_rate = float(raw_input("Stock 1 Leverage: "))
-	PriceToEarningsEquityThreshold = float(raw_input("Enter threshold P/E level: "))
+	EquityPriceToEarningsThreshold = float(raw_input("Enter Equity Upper P/E level: "))
+	BondPriceToEarningsThreshold = float(raw_input("Enter Bond Lower P/E level: "))
 	
 	stocks = []
 	t1 = pull_historical_data(stk1)
@@ -390,7 +394,7 @@ def generate_chart_manual_PriceToEarnings():
 	stocks.append((stk1.upper(), t1))
 	stocks.append((stk2.upper(), t2))
 	
-	InvestWithRebalancingUsingPERatios(stocks[0], stocks[1], leverage_rate=stock1_leverage_rate, PriceToEarningsEquityThreshold = PriceToEarningsEquityThreshold)
+	InvestWithRebalancingUsingPERatios(stocks[0], stocks[1], leverage_rate=stock1_leverage_rate, PriceToEarningsEquityThreshold = (BondPriceToEarningsThreshold, EquityPriceToEarningsThreshold))
 
 def findOptimalPriceToEarningsThreshold():
 	stk1 = raw_input("Enter Stock 1: ")
@@ -406,16 +410,17 @@ def findOptimalPriceToEarningsThreshold():
 	stocks.append((stk2.upper(), t2))
 	
 	returns = []
-	for x in xrange(5,40,1):
-		for y in xrange(x, 40, 1):
+	for x in xrange(5,44,1):
+		for y in xrange(x, 44, 1):
 			PriceToEarningsEquityThreshold = (x,y)
 			localReturn = InvestWithRebalancingUsingPERatios(stocks[0], stocks[1], leverage_rate=stock1_leverage_rate, PriceToEarningsEquityThreshold = PriceToEarningsEquityThreshold, chart=False)
 			returns.append((PriceToEarningsEquityThreshold, localReturn[0]))
 		
 	returns.sort(key=lambda x: x[1])
 	returns.reverse()
+	returns = returns[0:50]
 	for k in returns:
-		print k[0], " : ", k[1]
+		print k[0][0], " - ", k[0][1], " : ", k[1]
 	
 	
 def ReadInSPPriceToEarnings():
@@ -425,11 +430,6 @@ def ReadInSPPriceToEarnings():
 	with open(".\\Stocks\\shiller_pe.csv", 'rb') as input:
 		input.next()
 		stock_data = [float(x.split(',')[-1]) for x in input]
-		t = [0.0] * (len(stock_data)*21)
-		for count,x in enumerate(stock_data):
-			for y in xrange(21):
-				t[count*21+y] = x
-		stock_data = t
 	
 	stock_data.reverse()
 	SP_PE_ratio = stock_data
